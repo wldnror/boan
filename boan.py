@@ -4,14 +4,23 @@ import uos
 import ubinascii
 import sys
 
-# D+ 핀 설정 (하드웨어 구성에 맞게 수정)
-usb_connected_pin = machine.Pin(22, machine.Pin.IN, machine.Pin.PULL_UP)
+# ADC 핀 설정 (예: GP26 = ADC0)
+adc_pin = machine.ADC(26)
 
-# USB 연결 상태 확인 함수
-# 하드웨어 상황에 따라 == 0 이나 == 1로 바꿔서 테스트 필요
-# 여기서는 HIGH(1)일 때 USB 연결로 가정.
+def read_voltage():
+    # 16비트 범위(0 ~ 65535)로 읽기
+    val = adc_pin.read_u16()
+    voltage = (val / 65535.0) * 3.3
+    return voltage
+
 def is_usb_connected():
-    return (usb_connected_pin.value() == 1)
+    # 전압을 읽어 특정 조건으로 USB 연결 판단
+    v = read_voltage()
+    # 3.3V 이상 혹은 3.18V 이하일 때 USB 연결로 가정
+    # 필요하다면 로직 변경 가능
+    if v >= 3.3 or v <= 3.18:
+        return True
+    return False
 
 def create_log_file(log_path="/log.txt"):
     try:
@@ -56,7 +65,6 @@ def create_log_file(log_path="/log.txt"):
     except Exception as e:
         print("Error creating log file:", e)
 
-# 파일 시스템 내용 지우기 함수, log.txt는 제외
 def delete_files(path, exclude_file="log.txt"):
     try:
         for entry in uos.ilistdir(path):
@@ -79,15 +87,15 @@ def delete_files(path, exclude_file="log.txt"):
                 except Exception as e:
                     print(f"Error deleting file {entry_name}: {e}")
     except Exception as e:
-        # 디렉토리에 파일이 하나도 없을 경우 등의 예외처리
+        # 디렉토리에 파일이 없을 경우 등의 예외는 무시
         pass
 
-# 부팅 후 핀이 안정될 때까지 대기
+# 부팅 후 ADC 안정화를 위해 대기(필요 시)
 time.sleep(1)
 
 while True:
-    pin_val = usb_connected_pin.value()
-    print("Pin value:", pin_val)
+    v = read_voltage()
+    print("Measured Voltage:", v)
 
     if is_usb_connected():
         print("USB connected. Creating log and deleting files...")
@@ -96,11 +104,10 @@ while True:
         machine.reset()
     else:
         print("USB not connected.")
-        # USB가 연결되지 않은 경우 serve.py 실행
-        # 단, 이 상태에서 USB를 연결해도 다음 루프에서 감지하여 삭제 후 리셋할 수 있음.
+        # USB가 연결되지 않은 경우 serve.py 실행 시도
         try:
             import serve
-            serve.main()  # serve.py 내부 구현에 맞게 함수명 변경 필요
+            serve.main()  # serve.py 내부 구현에 맞게 함수명 또는 로직 변경 필요
         except Exception as e:
             print(f"Error running serve.py: {e}")
     
